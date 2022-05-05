@@ -12,10 +12,13 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -35,19 +38,30 @@ type PublicKey struct {
 type SSH struct {
 	listener net.Listener
 
-	sshconfig           *ssh.ServerConfig
-	config              *Config
-	PublicKeyLookupFunc func(string) (*PublicKey, error)
+	sshConfig *ssh.ServerConfig
+	gitConfig *Config
+	// Timeout, if set will close the connection after the given duration
+	Timeout *time.Duration
+	// DisableConnReuse, if true will disable a reuse of ssh connection in a later session.
+	DisableConnReuse bool
+	// DisableSimultaneousConns, if true will disable simultaneous conns from the same host.
+	DisableSimultaneousConns bool
+	PublicKeyLookupFunc      func(string) (*PublicKey, error)
 }
 
 func NewSSH(config Config) *SSH {
-	s := &SSH{config: &config}
+	s := &SSH{gitConfig: &config}
 
 	// Use PATH if full path is not specified
-	if s.config.GitPath == "" {
-		s.config.GitPath = "git"
+	if s.gitConfig.GitPath == "" {
+		s.gitConfig.GitPath = "git"
 	}
 	return s
+}
+
+// Sets the sshConfig of SSH to the given ssh.ServerConfig
+func (s *SSH) SetSSHConfig(config *ssh.ServerConfig) {
+	s.sshConfig = config
 }
 
 func fileExists(path string) bool {
@@ -80,7 +94,7 @@ func execCommand(cmdname string, args ...string) (string, string, error) {
 	return string(bufOut), string(bufErr), err
 }
 
-func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel) {
+func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel, sConn *ssh.ServerConn) {
 	for newChan := range chans {
 		if newChan.ChannelType() != "session" {
 			newChan.Reject(ssh.UnknownChannelType, "unknown channel type")
@@ -95,6 +109,27 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel) {
 
 		go func(in <-chan *ssh.Request) {
 			defer ch.Close()
+
+			defer func() {
+				if s.DisableConnReuse {
+					err := sConn.Close()
+					if err != nil {
+						log.Println("err while closing:", err)
+					}
+				}
+				if s.DisableSimultaneousConns {
+					host, _ := getHost(sConn.RemoteAddr().String())
+					mux.Lock()
+					defer mux.Unlock()
+					log.Println("disable simultaneous conns")
+					for i, connHost := range connHosts {
+						if host == connHost {
+							connHosts[i] = connHosts[len(connHosts)-1]
+							connHosts = connHosts[:len(connHosts)-1]
+						}
+					}
+				}
+			}()
 
 			for req := range in {
 				payload := cleanCommand(string(req.Payload))
@@ -137,8 +172,8 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel) {
 						return
 					}
 
-					if !repoExists(filepath.Join(s.config.Dir, gitcmd.Repo)) && s.config.AutoCreate == true {
-						err := initRepo(gitcmd.Repo, s.config)
+					if !repoExists(filepath.Join(s.gitConfig.Dir, gitcmd.Repo)) && s.gitConfig.AutoCreate == true {
+						err := initRepo(gitcmd.Repo, s.gitConfig)
 						if err != nil {
 							logError("repo-init", err)
 							return
@@ -146,7 +181,7 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel) {
 					}
 
 					cmd := exec.Command(gitcmd.Command, gitcmd.Repo)
-					cmd.Dir = s.config.Dir
+					cmd.Dir = s.gitConfig.Dir
 					cmd.Env = append(os.Environ(), "GITKIT_KEY="+keyID)
 					// cmd.Env = append(os.Environ(), "SSH_ORIGINAL_COMMAND="+cmdName)
 
@@ -190,13 +225,17 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel) {
 					log.Println("ssh: unsupported req type:", req.Type)
 					return
 				}
+				if s.DisableConnReuse {
+					log.Println("dispose connection")
+					break
+				}
 			}
 		}(reqs)
 	}
 }
 
 func (s *SSH) createServerKey() error {
-	if err := os.MkdirAll(s.config.KeyDir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(s.gitConfig.KeyDir, os.ModePerm); err != nil {
 		return err
 	}
 
@@ -205,12 +244,12 @@ func (s *SSH) createServerKey() error {
 		return err
 	}
 
-	privateKeyFile, err := os.Create(s.config.KeyPath())
+	privateKeyFile, err := os.Create(s.gitConfig.KeyPath())
 	if err != nil {
 		return err
 	}
 
-	if err := os.Chmod(s.config.KeyPath(), 0600); err != nil {
+	if err := os.Chmod(s.gitConfig.KeyPath(), 0600); err != nil {
 		return err
 	}
 	defer privateKeyFile.Close()
@@ -222,7 +261,7 @@ func (s *SSH) createServerKey() error {
 		return err
 	}
 
-	pubKeyPath := s.config.KeyPath() + ".pub"
+	pubKeyPath := s.gitConfig.KeyPath() + ".pub"
 	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		return err
@@ -231,15 +270,19 @@ func (s *SSH) createServerKey() error {
 }
 
 func (s *SSH) setup() error {
-	config := &ssh.ServerConfig{
-		ServerVersion: fmt.Sprintf("SSH-2.0-gitkit %s", Version),
+	var config *ssh.ServerConfig
+	if s.sshConfig != nil {
+		config = s.sshConfig
+	} else {
+		config = &ssh.ServerConfig{}
 	}
+	config.ServerVersion = fmt.Sprintf("SSH-2.0-gitkit %s", Version)
 
-	if s.config.KeyDir == "" {
+	if s.gitConfig.KeyDir == "" {
 		return fmt.Errorf("key directory is not provided")
 	}
 
-	if !s.config.Auth {
+	if !s.gitConfig.Auth {
 		config.NoClientAuth = true
 	} else {
 		if s.PublicKeyLookupFunc == nil {
@@ -260,7 +303,7 @@ func (s *SSH) setup() error {
 		}
 	}
 
-	keypath := s.config.KeyPath()
+	keypath := s.gitConfig.KeyPath()
 	if !fileExists(keypath) {
 		if err := s.createServerKey(); err != nil {
 			return err
@@ -278,7 +321,7 @@ func (s *SSH) setup() error {
 	}
 
 	config.AddHostKey(private)
-	s.sshconfig = config
+	s.sshConfig = config
 	return nil
 }
 
@@ -291,7 +334,7 @@ func (s *SSH) Listen(bind string) error {
 		return err
 	}
 
-	if err := s.config.Setup(); err != nil {
+	if err := s.gitConfig.Setup(); err != nil {
 		return err
 	}
 
@@ -302,6 +345,24 @@ func (s *SSH) Listen(bind string) error {
 	}
 
 	return nil
+}
+
+var mux sync.Mutex
+var connHosts []string
+
+func getHost(addr string) (string, error) {
+	if !strings.HasPrefix(addr, "ssh://") {
+		addr = "ssh://" + addr
+	}
+	u, err := url.Parse(addr)
+	if err != nil {
+		return "", err
+	}
+	host, _, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return "", err
+	}
+	return host, nil
 }
 
 func (s *SSH) Serve() error {
@@ -316,10 +377,40 @@ func (s *SSH) Serve() error {
 			return err
 		}
 
+		if s.DisableSimultaneousConns {
+			mux.Lock()
+			defer mux.Unlock()
+			host, _ := getHost(conn.RemoteAddr().String())
+			var matched bool
+			for _, connHost := range connHosts {
+				if host == connHost {
+					log.Println("can't have two multiple simultaneous connections from the same client")
+					err := conn.Close()
+					if err != nil {
+						log.Println("err while closing:", err)
+					}
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				connHosts = append(connHosts, host)
+			} else {
+				continue
+			}
+		}
+
+		if s.Timeout != nil {
+			go func(conn net.Conn) {
+				time.Sleep(*s.Timeout)
+				conn.Close()
+			}(conn)
+		}
+
 		go func() {
 			log.Printf("ssh: handshaking for %s", conn.RemoteAddr())
 
-			sConn, chans, reqs, err := ssh.NewServerConn(conn, s.sshconfig)
+			sConn, chans, reqs, err := ssh.NewServerConn(conn, s.sshConfig)
 			if err != nil {
 				if err == io.EOF {
 					log.Printf("ssh: handshaking was terminated: %v", err)
@@ -331,7 +422,7 @@ func (s *SSH) Serve() error {
 
 			log.Printf("ssh: connection from %s (%s)", sConn.RemoteAddr(), sConn.ClientVersion())
 
-			if s.config.Auth && s.config.GitUser != "" && sConn.User() != s.config.GitUser {
+			if s.gitConfig.Auth && s.gitConfig.GitUser != "" && sConn.User() != s.gitConfig.GitUser {
 				sConn.Close()
 				return
 			}
@@ -342,7 +433,7 @@ func (s *SSH) Serve() error {
 			}
 
 			go ssh.DiscardRequests(reqs)
-			go s.handleConnection(keyId, chans)
+			go s.handleConnection(keyId, chans, sConn)
 		}()
 	}
 }
