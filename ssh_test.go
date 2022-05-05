@@ -17,6 +17,7 @@ limitations under the License.
 package gitkit
 
 import (
+	"fmt"
 	"math/rand"
 	"net"
 	"os"
@@ -131,27 +132,33 @@ func createRepo() (string, error) {
 	}
 
 	// init git
+	e := new(strings.Builder)
 	cmd := exec.Command("git", "init")
 	cmd.Dir = repo
+	cmd.Stderr = e
 	if _, err = cmd.Output(); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to initalize repo: %s", e.String())
 	}
+	e.Reset()
+
 	if err = os.WriteFile(filepath.Join(repo, "homework"), []byte("all done"), 0644); err != nil {
 		return "", err
 	}
 
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = repo
-
+	cmd.Stderr = e
 	if _, err := cmd.Output(); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to add changes: %s", e.String())
 	}
+	e.Reset()
 
-	cmd = exec.Command("git", "commit", "-m", "add homework")
+	cmd = exec.Command("git", "-c", "user.email=test@ssh.com", "-c", "user.name=test-user", "commit", "-m", "add homework")
 	cmd.Dir = repo
+	cmd.Stderr = e
 
 	if _, err := cmd.Output(); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to commit changes: %s", e.String())
 	}
 	return repo, nil
 }
