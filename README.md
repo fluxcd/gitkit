@@ -2,13 +2,16 @@
 
 Toolkit to build Git push workflows with Go
 
-[![Build](https://img.shields.io/travis/sosedoff/gitkit/master.svg?label=Build)](https://travis-ci.org/sosedoff/gitkit)
-[![GoDoc](https://godoc.org/github.com/sosedoff/gitkit?status.svg)](https://godoc.org/github.com/sosedoff/gitkit)
+[![tests](https://github.com/fluxcd/gitkit/workflows/tests/badge.svg)](https://github.com/fluxcd/gitkit/actions)
+[![report](https://goreportcard.com/badge/github.com/fluxcd/gitkit)](https://goreportcard.com/report/github.com/fluxcd/gitkit)
+[![license](https://img.shields.io/github/license/fluxcd/gitkit.svg)](https://github.com/fluxcd/gitkit/blob/master/LICENSE)
+[![GoDoc](https://godoc.org/github.com/fluxcd/gitkit?status.svg)](https://godoc.org/github.com/fluxcd/gitkit)
+[![release](https://img.shields.io/github/release/fluxcd/gitkit/all.svg)](https://github.com/fluxcd/gitkit/releases)
 
 ## Install
 
 ```bash
-go get github.com/sosedoff/gitkit
+go get github.com/fluxcd/gitkit
 ```
 
 ## Smart HTTP Server
@@ -19,7 +22,7 @@ package main
 import (
   "log"
   "net/http"
-  "github.com/sosedoff/gitkit"
+  "github.com/fluxcd/gitkit"
 )
 
 func main() {
@@ -101,7 +104,7 @@ import (
   "log"
   "net/http"
 
-  "github.com/sosedoff/gitkit"
+  "github.com/fluxcd/gitkit"
 )
 
 func main() {
@@ -164,7 +167,7 @@ package main
 
 import (
   "log"
-  "github.com/sosedoff/gitkit"
+  "github.com/fluxcd/gitkit"
 )
 
 // User-defined key lookup function. You can make a call to a database or
@@ -259,7 +262,7 @@ import (
   "os"
   "fmt"
 
-  "github.com/sosedoff/gitkit"
+  "github.com/fluxcd/gitkit"
 )
 
 // HookInfo contains information about branch, before and after revisions.
