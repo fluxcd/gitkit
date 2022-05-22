@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"syscall"
 )
 
 var reSlashDedup = regexp.MustCompile(`\/{2,}`)
@@ -26,14 +25,14 @@ func logInfo(context string, message string) {
 	log.Printf("%s: %s\n", context, message)
 }
 
-func cleanUpProcessGroup(cmd *exec.Cmd) {
+func cleanUpProcess(cmd *exec.Cmd) {
 	if cmd == nil {
 		return
 	}
 
 	process := cmd.Process
 	if process != nil && process.Pid > 0 {
-		syscall.Kill(-process.Pid, syscall.SIGTERM)
+		process.Kill()
 	}
 
 	go cmd.Wait()
