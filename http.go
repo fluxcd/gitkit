@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path"
 	"strings"
-	"syscall"
 )
 
 type service struct {
@@ -145,7 +144,7 @@ func (s *Server) getInfoRefs(_ string, w http.ResponseWriter, r *Request) {
 		fail500(w, context, err)
 		return
 	}
-	defer cleanUpProcessGroup(cmd)
+	defer cleanUpProcess(cmd)
 
 	w.Header().Add("Content-Type", fmt.Sprintf("application/x-%s-advertisement", rpc))
 	w.Header().Add("Cache-Control", "no-cache")
@@ -197,7 +196,7 @@ func (s *Server) postRPC(rpc string, w http.ResponseWriter, r *Request) {
 		fail500(w, context, err)
 		return
 	}
-	defer cleanUpProcessGroup(cmd)
+	defer cleanUpProcess(cmd)
 
 	if _, err := io.Copy(stdin, body); err != nil {
 		fail500(w, context, err)
@@ -243,7 +242,6 @@ func repoExists(p string) bool {
 
 func gitCommand(name string, args ...string) (*exec.Cmd, io.Reader) {
 	cmd := exec.Command(name, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = os.Environ()
 
 	r, _ := cmd.StdoutPipe()
