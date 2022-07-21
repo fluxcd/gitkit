@@ -185,6 +185,16 @@ func (s *Server) postRPC(rpc string, w http.ResponseWriter, r *Request) {
 	}
 
 	cmd, pipe := gitCommand(s.config.GitPath, subCommand(rpc), "--stateless-rpc", r.RepoPath)
+
+	// Simulates servers that short-circuit the connection
+	// when the user does not have permissions to finish
+	// the operation at hand.
+	//
+	// During a git push, this leads to an 'early EOF' error.
+	if rpc == "git-receive-pack" && s.config.ReadOnly {
+		return
+	}
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		fail500(w, context, err)

@@ -180,6 +180,16 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel, sConn 
 						}
 					}
 
+					// Simulates servers that short-circuit the connection
+					// when the user does not have permissions to finish
+					// the operation at hand.
+					//
+					// During a git push, this leads to an 'EOF' error.
+					if gitcmd.Command == "git-receive-pack" && s.gitConfig.ReadOnly {
+						sConn.Close()
+						break
+					}
+
 					cmd := exec.Command(gitcmd.Command, gitcmd.Repo)
 					cmd.Dir = s.gitConfig.Dir
 					cmd.Env = append(os.Environ(), "GITKIT_KEY="+keyID)

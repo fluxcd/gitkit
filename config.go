@@ -15,6 +15,7 @@ type Config struct {
 	AutoHooks  bool         // Automatically setup git hooks
 	Hooks      *HookScripts // Scripts for hooks/* directory
 	Auth       bool         // Require authentication
+	ReadOnly   bool         // Simulates a user that has read-only access to the repository.
 }
 
 // HookScripts represents all repository server-size git hooks
