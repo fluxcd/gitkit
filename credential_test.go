@@ -9,15 +9,20 @@ import (
 
 func Test_getCredential(t *testing.T) {
 	req, _ := http.NewRequest("get", "http://localhost", nil)
-	_, err := getCredential(req)
-	assert.Error(t, err)
-	assert.Equal(t, "authentication failed", err.Error())
+	cred := getCredential(req)
+	assert.Equal(t, cred.Authorization, "")
 
 	req, _ = http.NewRequest("get", "http://localhost", nil)
 	req.SetBasicAuth("Alladin", "OpenSesame")
-	cred, err := getCredential(req)
+	cred = getCredential(req)
 
-	assert.NoError(t, err)
 	assert.Equal(t, "Alladin", cred.Username)
 	assert.Equal(t, "OpenSesame", cred.Password)
+	assert.Contains(t, cred.Authorization, "Basic ")
+
+	req, _ = http.NewRequest("get", "http://localhost", nil)
+	req.Header.Add("Authorization", "Bearer VerySecretToken")
+	cred = getCredential(req)
+
+	assert.Equal(t, "Bearer VerySecretToken", cred.Authorization)
 }

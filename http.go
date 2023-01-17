@@ -88,16 +88,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
+		cred := getCredential(r)
+		if cred.Authorization == "" {
+			logError("auth", fmt.Errorf("no Authorization header found"))
 			w.Header()["WWW-Authenticate"] = []string{`Basic realm=""`}
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		cred, err := getCredential(r)
-		if err != nil {
-			logError("auth", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
