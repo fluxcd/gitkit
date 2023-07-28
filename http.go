@@ -228,8 +228,13 @@ func (s *Server) Setup() error {
 func initRepo(name string, config *Config) error {
 	fullPath := path.Join(config.Dir, name)
 
-	if err := exec.Command(config.GitPath, "init", "--bare", fullPath).Run(); err != nil {
-		return err
+	args := []string{"init", "--bare", fullPath}
+	if config.DefaultBranch != "" {
+		args = append(args, "--initial-branch", config.DefaultBranch)
+	}
+	cmd := exec.Command(config.GitPath, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("err running cmd: %w, output: '%s'", err, out)
 	}
 
 	if config.AutoHooks && config.Hooks != nil {

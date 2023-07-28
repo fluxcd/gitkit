@@ -7,15 +7,16 @@ import (
 )
 
 type Config struct {
-	KeyDir     string       // Directory for server ssh keys. Only used in SSH strategy.
-	Dir        string       // Directory that contains repositories
-	GitPath    string       // Path to git binary
-	GitUser    string       // User for ssh connections
-	AutoCreate bool         // Automatically create repostories
-	AutoHooks  bool         // Automatically setup git hooks
-	Hooks      *HookScripts // Scripts for hooks/* directory
-	Auth       bool         // Require authentication
-	ReadOnly   bool         // Simulates a user that has read-only access to the repository.
+	KeyDir        string       // Directory for server ssh keys. Only used in SSH strategy.
+	Dir           string       // Directory that contains repositories
+	GitPath       string       // Path to git binary
+	GitUser       string       // User for ssh connections
+	AutoCreate    bool         // Automatically create repostories
+	AutoHooks     bool         // Automatically setup git hooks
+	Hooks         *HookScripts // Scripts for hooks/* directory
+	Auth          bool         // Require authentication
+	ReadOnly      bool         // Simulates a user that has read-only access to the repository.
+	DefaultBranch string       // branch that will be used for initializing the git repository
 }
 
 // HookScripts represents all repository server-size git hooks
