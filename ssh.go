@@ -46,7 +46,9 @@ type SSH struct {
 	DisableConnReuse bool
 	// DisableSimultaneousConns, if true will disable simultaneous conns from the same host.
 	DisableSimultaneousConns bool
-	PublicKeyLookupFunc      func(string) (*PublicKey, error)
+	// Latency, if set will introduce some synthetic latency to the ssh server operations.
+	Latency             *time.Duration
+	PublicKeyLookupFunc func(string) (*PublicKey, error)
 }
 
 func NewSSH(config Config) *SSH {
@@ -121,7 +123,6 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel, sConn 
 					host, _ := getHost(sConn.RemoteAddr().String())
 					mux.Lock()
 					defer mux.Unlock()
-					log.Println("disable simultaneous conns")
 					for i, connHost := range connHosts {
 						if host == connHost {
 							connHosts[i] = connHosts[len(connHosts)-1]
@@ -222,6 +223,10 @@ func (s *SSH) handleConnection(keyID string, chans <-chan ssh.NewChannel, sConn 
 					go io.Copy(input, ch)
 					io.Copy(ch, stdout)
 					io.Copy(ch.Stderr(), stderr)
+
+					if s.Latency != nil {
+						time.Sleep(*s.Latency)
+					}
 
 					if err = cmd.Wait(); err != nil {
 						log.Printf("ssh: command failed: %v", err)
@@ -405,8 +410,6 @@ func (s *SSH) Serve() error {
 			}
 			if !matched {
 				connHosts = append(connHosts, host)
-			} else {
-				continue
 			}
 		}
 
